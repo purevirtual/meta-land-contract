@@ -1,4 +1,4 @@
-# com-contract-union
+# meta-land-contract
 Next version of Comunion contract project
 
 # how to contribute code 
@@ -16,37 +16,20 @@ Next version of Comunion contract project
 6. hotfix/xxx for ambulance bug
 
 # how to start
-1. install truffle
+1. install dependences
     ```
-    npm install -g truffle
+    pnpm install
     ```
 
 2. add a sol in contract dir
-3. add it to 2_deploy_contract
-    ```
-    const Startup = artifacts.require('Startup');
-
-
-    module.exports = (deployer) => {
-      deployer.deploy(Startup);
-    };
-    ```
-4. migrate contract to development
-    ```
-    yarn dev
-    ```
-
-5. migrate contract to goerli
-    ```
-    yarn goerli
-    ```
-6. how to test your contract
+ 
+3. how to test your contract
   -. write your test sol in test dir
   -. the test function name must start with "test"
   -. migrate your contract
   -. run
     ```
-    truffle test
+    npx hardhat test
     ```
 
 # how to created local environment
