@@ -19,7 +19,7 @@ module.exports = {
       allowUnlimitedContractSize: true,
       url: "https://sepolia.infura.io/v3/" + infuraKey,
       accounts: [
-        "c251e3b9822005f6ba00b228568d046e0d11f21b7ea69aa2d87475aaaf2aa515",
+        "e6277f1f6d301bd3faf38e02f27f068b15abd3dc9f40a898112df9a287fbaef7",
       ],
     },
   },

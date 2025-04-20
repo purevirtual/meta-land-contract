@@ -8,18 +8,18 @@ async function main() {
 //   console.log(BountyFactory.createBounty, ethers.utils,);
   
 
-//   const tx = await BountyFactory.createBounty(
-//     '0x0000000000000000000000000000000000000000',
-//     // ethers.utils.parseEther("0.01"),
-//     0,
-//     ethers.utils.parseEther("0.1"),
-//     Date.now() + 10000000000000,
-//     // {
-//     //   value: ethers.utils.parseEther("0.01"),
-//     // }
-//   );
+  const tx = await BountyFactory.createBounty(
+    '0x0000000000000000000000000000000000000000',
+    // ethers.utils.parseEther("0.01"),
+    0,
+    ethers.utils.parseEther("0.1"),
+    Date.now() + 10000000000000,
+    // {
+    //   value: ethers.utils.parseEther("0.01"),
+    // }
+  );
 
-//   console.log(tx);
+  console.log(tx);
 // '0x749406bDF11DE48901CCDC4cfa928e10cE730b1F'
 const bounty = await BountyFactory.children()
 
