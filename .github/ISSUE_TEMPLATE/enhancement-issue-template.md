@@ -1,6 +1,6 @@
 ---
 name: Enhancement issue template
-about: Improve our project.
+about: Do some enhancement for this project.
 title: ''
 labels: enhancement
 assignees: ''
