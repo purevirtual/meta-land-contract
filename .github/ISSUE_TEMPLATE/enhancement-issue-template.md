@@ -1,6 +1,6 @@
 ---
-name: Custom issue template
-about: Describe this issue template's purpose here.
+name: Enhancement issue template
+about: Improve our project.
 title: ''
 labels: enhancement
 assignees: ''
