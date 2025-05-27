@@ -11,7 +11,7 @@ contract Startup is OwnableUpgradeable, UUPSUpgradeable {
     }
 
     struct wallet {
-        string name;
+        string name; 
         address walletAddress;
     }
 
