@@ -22,7 +22,7 @@ contract BountyFactory is Ownable {
 
     FactoryStore store;
 
-    constructor() {
+    constructor() Ownable(msg.sender)  {
         store = new FactoryStore();
     }
 
@@ -205,7 +205,7 @@ contract Bounty is Ownable {
         _;
     }
 
-    constructor(address _factory, address _founder) {
+    constructor(address _factory, address _founder) Ownable(msg.sender) {
         factory = _factory;
         founder = _founder;
         thisAccount = address(this);

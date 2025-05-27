@@ -1,16 +1,6 @@
 // SPDX-License-Identifier: SimPL-2.0
 pragma solidity ^0.8.x <0.9.0;
 
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "../contracts/base/Base.sol";
-import "hardhat/console.sol";
-
-import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
-import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
-import "@openzeppelin/contracts/proxy/beacon/IBeacon.sol";
-import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
-import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
@@ -70,11 +60,9 @@ contract Startup is OwnableUpgradeable, UUPSUpgradeable {
     }
 
     // 获取逻辑地址
-    /*
-    function getImplementation() public view returns (address) {
-        return ERC1967Utils.getImplementation();
-    }
-    */
+    // function getImplementation() public view returns (address) {
+    //     return ERC1967Utils.getImplementation();
+    // }
+    
     function _authorizeUpgrade(address) internal view override onlyOwner {}
- //   function _authorizeUpgrade(address) internal view override {}
 }

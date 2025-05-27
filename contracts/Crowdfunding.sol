@@ -22,7 +22,7 @@ contract CrowdfundingFactory is Ownable {
     address public feeToSetter;
     address public transferSigner;
 
-    constructor(address _feeToSetter, address _feeTo, address _transferSigner) {
+    constructor(address _feeToSetter, address _feeTo, address _transferSigner) Ownable(msg.sender) {
         store = new FactoryStore();
         dexRouters = new Whitelist();
         feeToSetter = _feeToSetter;
@@ -256,7 +256,7 @@ contract Crowdfunding is Ownable, EIP712 {
         address _founder,
         string memory _name,
         string memory _version
-    ) EIP712(_name, _version) {
+    ) EIP712(_name, _version) Ownable(msg.sender) {
         factory = _factory;
         founder = _founder;
         thisAccount = address(this);
