@@ -11,9 +11,9 @@ async function main() {
         kind: 'uups'
     });
     await startup.deployed();
-    console.log("Startup deployed to(proxy contract):", await startup.address);
-    // 底层逻辑地址，升级时候使用
-    console.log("Startup logic contract is:", await startup.getImplementation());
+
+    const proxy = await startup.address
+    console.log("Startup deployed to(proxy contract):", proxy);
 }
 
 main()
