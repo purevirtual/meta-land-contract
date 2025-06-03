@@ -60,9 +60,9 @@ contract Startup is OwnableUpgradeable, UUPSUpgradeable {
     }
 
     // 获取逻辑地址
-    // function getImplementation() public view returns (address) {
-    //     return ERC1967Utils.getImplementation();
-    // }
-    
+    function getImplementation() public view returns (address) {
+        return ERC1967Utils.getImplementation();
+    }
+
     function _authorizeUpgrade(address) internal view override onlyOwner {}
 }

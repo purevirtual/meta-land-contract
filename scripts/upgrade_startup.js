@@ -27,8 +27,7 @@ async function main() {
     // await tx.wait()
     // console.log("upgrade tx: ", tx)
 
-    const newContract = await ethers.getContractFactory("Startup")
-    const upgraded = await upgrades.upgradeProxy(proxyAddress, newContract, { call:"owner" });
+    const upgraded = await upgrades.upgradeProxy(proxyAddress, newContract, { call:"owner"});
 
     await upgraded.deployed();
     console.log('Contract upgraded');

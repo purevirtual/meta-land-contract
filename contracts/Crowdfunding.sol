@@ -256,7 +256,7 @@ contract Crowdfunding is Ownable, EIP712 {
         address _founder,
         string memory _name,
         string memory _version
-    ) EIP712(_name, _version) Ownable(msg.sender) {
+    ) Ownable(_founder) EIP712(_name, _version) {
         factory = _factory;
         founder = _founder;
         thisAccount = address(this);
