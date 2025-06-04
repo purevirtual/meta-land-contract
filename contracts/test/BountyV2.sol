@@ -1,0 +1,13 @@
+// SPDX-License-Identifier: SimPL-2.0
+pragma solidity >=0.8.x <0.9.0;
+
+import "../Bounty.sol";
+
+
+contract BountyV2 is Bounty {
+    uint256 public isUpgraded;
+
+    function setUpgrade(uint256 _u) public onlyFounder {
+        isUpgraded = _u;
+    }
+}

@@ -14,6 +14,9 @@ async function main() {
 
     const proxy = await startup.address
     console.log("Startup deployed to(proxy contract):", proxy);
+
+    let implementationAddress = await upgrades.erc1967.getImplementationAddress(proxy);
+    console.log("mplementation address:", implementationAddress);
 }
 
 main()

@@ -86,14 +86,6 @@ contract CrowdfundingFactory is Ownable {
         return store.isChild(_address);
     }
 
-    function transferPrimary(address newFactory) external onlyOwner {
-        store.transferPrimary(newFactory);
-    }
-
-    function transferStore(address newStore) external onlyOwner {
-        store = FactoryStore(newStore);
-    }
-
     function renounceOwnership() public override onlyOwner {}
 
     function getStore() external view onlyOwner returns (address) {

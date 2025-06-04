@@ -3,7 +3,7 @@ const { ethers, upgrades } = require("hardhat");
 async function main() {
     // 这里使用第一次部署得到的代理合约地址，而不是重新部署代理合约
     //const proxyAddress = 'YOUR_PROXY_CONTRACT_ADDRESS';
-    const proxyAddress = '0xa8350afcE21cD92b1795Fc77c229786FF4B7b5D5';
+    const proxyAddress = '0x551D8a9eCd399190a956C3f8fa7a83D0AA9fC477';
 
     let implementationAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
     console.log("Old implementation address:", implementationAddress);
@@ -27,8 +27,8 @@ async function main() {
     // await tx.wait()
     // console.log("upgrade tx: ", tx)
 
-    const upgraded = await upgrades.upgradeProxy(proxyAddress, newContract, { call:"owner"});
-
+    const startupContract = await ethers.getContractFactory('Startup')
+    const upgraded = await upgrades.upgradeProxy(proxyAddress, startupContract, { call: "owner" });
     await upgraded.deployed();
     console.log('Contract upgraded');
 

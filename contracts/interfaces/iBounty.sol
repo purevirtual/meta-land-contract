@@ -11,10 +11,7 @@ struct Parameters {
 
 // 定义IBounty 接口 , factory需要调用
 interface IBounty {
-    function init(Parameters memory _paras) external payable;
     function vaultAccount() external view returns (address);
-    function transferOwnership(address newOwner) external;
-
 }
 
 

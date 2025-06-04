@@ -1,22 +1,22 @@
 const { ethers, upgrades } = require("hardhat");
 
 async function main() {
-    // 这里使用第一次部署得到的代理合约地址，而不是重新部署代理合约
-    //const proxyAddress = 'YOUR_PROXY_CONTRACT_ADDRESS';
-    const proxyAddress = '0xe6cd99223e209bd04de48c083746717c6519a56d';
+    const proxyAddress = '0xE621e122316ffa9A3Fa0FeB92Fb289B7f61B9240';
+
+    let implementationAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
+    console.log("Old implementation address:", implementationAddress);
 
     const [deployer] = await ethers.getSigners();
     console.log("upgrade with contracts using account:", deployer.address);
 
-    // 假设新写的合约 还是原来的Startup，但实际上可以改名
-    const newContract = await ethers.getContractFactory('BountyFactory');
-
-    // 这里必须调一个函数，否则会有问题
-    const upgraded = await upgrades.upgradeProxy(proxyAddress, newContract, { call:"owner"});
-
+    const bountyFactoryContract = await ethers.getContractFactory('BountyFactory')
+    const upgraded = await upgrades.upgradeProxy(proxyAddress, bountyFactoryContract, { call: "owner" });
     await upgraded.deployed();
     console.log('Contract upgraded');
-    console.log("BountyFactory upgraded, proxy address is:", proxyAddress);
+
+    // 获取升级后的逻辑合约地址
+    implementationAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
+    console.log("new implementation address:", implementationAddress);
 }
 
 main()

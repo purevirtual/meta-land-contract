@@ -2,9 +2,8 @@
 pragma solidity >=0.8.x <0.9.0;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "./ownership/Secondary.sol";
 
-contract BountyStore is Secondary {
+contract BountyStore {
     struct Applicant {
         uint256 amount;
         uint8 status;
@@ -17,59 +16,73 @@ contract BountyStore is Secondary {
     mapping(address => bool) mappedDepositLockers;
     mapping(address => bool) mappedDepositUnlockers;
 
-    receive() external payable {
-        emit Receive(msg.sender, "receive");
+    address private _owner;
+
+    constructor() {
+        _owner = msg.sender;
     }
 
-    function transfer(address _to, uint256 _amount) public onlyPrimary returns(bool) {
+    function transfer(address _to, uint256 _amount) public onlyOwner returns(bool) {
         (bool isSend,) = _to.call{value: _amount}("");
         return isSend;
     }
 
-    function transferToken(IERC20 _token, address _to, uint256 _amount) public onlyPrimary returns(bool) {
+    function transferToken(IERC20 _token, address _to, uint256 _amount) public onlyOwner returns(bool) {
         return _token.transfer(_to, _amount);
     }
 
-    function applicants() public view onlyPrimary returns(address[] memory) {
+    function applicants() public view onlyOwner returns(address[] memory) {
         return arrayApplicants;
     }
 
-    function pushApplicant(address _address) public onlyPrimary {
+    function pushApplicant(address _address) public onlyOwner {
         arrayApplicants.push(_address);
     }
 
-    function putApplicant(address _address, uint256 _amount, uint8 _status) public onlyPrimary {
+    function putApplicant(address _address, uint256 _amount, uint8 _status) public onlyOwner {
         Applicant memory a = Applicant(_amount, _status);
         mappedApplicants[_address] = a;
     }
 
-    function putApplicantAmount(address _address, uint256 _amount) public onlyPrimary {
+    function putApplicantAmount(address _address, uint256 _amount) public onlyOwner {
         mappedApplicants[_address].amount = _amount;
     }
 
-    function putApplicantStatus(address _address, uint8 _status) public onlyPrimary {
+    function putApplicantStatus(address _address, uint8 _status) public onlyOwner {
         mappedApplicants[_address].status = _status;
     }
 
-    function getApplicant(address _address) public view onlyPrimary returns(uint256 amount, uint8 status) {
+    function getApplicant(address _address) public view onlyOwner returns(uint256 amount, uint8 status) {
         Applicant memory a = mappedApplicants[_address];
         return (a.amount, a.status);
     }
 
-    function putDepositLocker(address _address, bool _bool) public onlyPrimary {
+    function putDepositLocker(address _address, bool _bool) public onlyOwner {
         mappedDepositLockers[_address] = _bool;
     }
 
-    function getDepositLocker(address _address) public view onlyPrimary returns(bool) {
+    function getDepositLocker(address _address) public view onlyOwner returns(bool) {
         return mappedDepositLockers[_address];
     }
 
-    function putDepositUnlocker(address _address, bool _bool) public onlyPrimary {
+    function putDepositUnlocker(address _address, bool _bool) public onlyOwner {
         mappedDepositUnlockers[_address] = _bool;
     }
 
-    function getDepositUnlocker(address _address) public view onlyPrimary returns(bool) {
+    function getDepositUnlocker(address _address) public view onlyOwner returns(bool) {
         return mappedDepositUnlockers[_address];
     }
 
+    function owner() public view returns (address) {
+        return _owner;
+    }
+
+    receive() external payable {
+        emit Receive(msg.sender, "receive");
+    }
+
+    modifier onlyOwner() {
+        require(msg.sender == _owner, "caller is not the owner account");
+        _;
+    }
 }

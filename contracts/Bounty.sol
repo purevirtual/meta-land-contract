@@ -3,105 +3,16 @@ pragma solidity >=0.8.x <0.9.0;
 
 import "@openzeppelin/contracts/proxy/beacon/IBeacon.sol";
 import "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
+import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts/utils/math/Math.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "./interfaces/iBounty.sol";
-import "../utils/SafeMath.sol";
-import "./ownership/Secondary.sol";
-import "./FactoryStore.sol";
+import "./interfaces/IBounty.sol";
 import "./BountyStore.sol";
 
 
-//contract BountyFactory is Ownable {
-contract BountyFactory is OwnableUpgradeable, UUPSUpgradeable {
-    event Created(address founder, address bounty, Parameters paras);
-
-    FactoryStore store;
-    address public bountyBeacon;
-
-    function initialize(address _bountyBeacon) public initializer {
-        __Ownable_init(msg.sender);
-        __UUPSUpgradeable_init();
-        bountyBeacon = _bountyBeacon;
-        store = new FactoryStore();
-    }
-
-    // 获取逻辑地址
-    function getImplementation() public view returns (address) {
-        return ERC1967Utils.getImplementation();
-    }
-
-    // UUPS升级授权函数，只有合约所有者能升级
-    function _authorizeUpgrade(address) internal view override onlyOwner {}
-
-    function createBounty(address _depositToken, uint256 _founderDepositAmount, uint256 _applicantDepositAmount, uint256 _applyDeadline) payable public {
-        require(_applyDeadline > block.timestamp, "Applicant cutoff date is expired");
-        Parameters memory paras = Parameters({depositToken: _depositToken,
-        depositTokenIsNative: false,
-        founderDepositAmount: _founderDepositAmount,
-        applicantDepositMinAmount: _applicantDepositAmount,
-        applyDeadline: _applyDeadline});
-        bytes memory data = abi.encodeWithSelector(
-            Bounty.initialize.selector,
-            address(this),
-            msg.sender
-        );
-        BountyProxy bounty = new BountyProxy(bountyBeacon, data);
-        IBounty(address(bounty)).init(paras);
-        // Bounty bounty = new Bounty(address(this), msg.sender);
-        //bounty.init(paras);
-        if (paras.founderDepositAmount > 0) {
-            if (_depositToken == address(0)) {
-                require(msg.value == paras.founderDepositAmount, "msg.value is not valid");
-                // require(msg.sender.balance >= paras.founderDepositAmount, "Your balance is insufficient");
-                (bool isSend,) = IBounty(address(bounty)).vaultAccount().call{value: paras.founderDepositAmount}("");
-                require(isSend, "Transfer contract failure");
-                paras.depositTokenIsNative = true;
-            } else {
-                IERC20 depositToken = IERC20(_depositToken);
-                require(depositToken.balanceOf(msg.sender) >= _founderDepositAmount, "Deposit token balance is insufficient");
-                require(depositToken.allowance(msg.sender, address(this)) >= _founderDepositAmount, "Deposit token allowance is insufficient");
-                require(depositToken.transferFrom(msg.sender, IBounty(address(bounty)).vaultAccount(), _founderDepositAmount), "Deposit token transferFrom failure");
-            }
-        }
-        IBounty(address(bounty)).transferOwnership(msg.sender);
-
-        store.push(address(bounty));
-        emit Created(msg.sender, address(bounty), paras);
-    }
-
-    function children() external view returns (address[] memory) {
-        return store.children();
-    }
-
-    function isChild(address childAddr) external view returns (bool) {
-        return store.isChild(childAddr);
-    }
-
-    function transferPrimary(address newFactory) external onlyOwner {
-        store.transferPrimary(newFactory);
-    }
-
-    function getStore() external onlyOwner view returns (address) {
-        return address(store);
-    }
-
-    function transferStore(address newStore) external onlyOwner {
-        store = FactoryStore(newStore);
-    }
-
-    function renounceOwnership() public override onlyOwner {
-    }
-}
-
 contract Bounty is IBounty, Initializable, OwnableUpgradeable {
-//contract Bounty is Ownable, Initializable {
-    using SafeMath for uint;
-
     enum BountyStatus {
         Pending, ReadyToWork, WorkStarted, Completed, Expired
     }
@@ -130,7 +41,6 @@ contract Bounty is IBounty, Initializable, OwnableUpgradeable {
     bool private depositLock;
     bool internal locked;
     BountyStatus private bountyStatus;
-    uint256 public value;
 
     event Created(address owner, address factory, address founder, Parameters paras);
     event Deposit(address from, uint256 amount, uint256 founderBalance);
@@ -144,113 +54,12 @@ contract Bounty is IBounty, Initializable, OwnableUpgradeable {
     event Unlock(address caller);
     event PostUpdate(address caller, uint256 expiredTime);
 
-    modifier onlyFounder() {
-        _checkFounder();
-        _;
-    }
-
-    modifier onlyOthers() {
-        _checkOthers();
-        _;
-    }
-
-    modifier onlyApplied() {
-        _checkAppliedApplicant();
-        _;
-    }
-
-    modifier inApplyTime() {
-        _checkInApplyTime();
-        _;
-    }
-
-    modifier inReadyToWork() {
-        _checkBountyStatus(BountyStatus.ReadyToWork, "Bounty status not in ready to work");
-        _;
-    }
-
-    modifier inWorkStarted() {
-        _checkBountyStatus(BountyStatus.WorkStarted, "Bounty status not in work started");
-        _;
-    }
-
-    modifier notCompleted() {
-        _checkNotBountyStatus(BountyStatus.Completed, "Bounty status is completed");
-        _;
-    }
-
-    modifier notExpired() {
-        _checkNotBountyStatus(BountyStatus.Expired, "Bounty status is expired");
-        _;
-    }
-
-    modifier depositLocked() {
-        require(depositLock, "Deposit is unlock");
-        _;
-    }
-
-    modifier depositUnlock() {
-        require(!depositLock, "Deposit is locked");
-        _;
-    }
-
-    modifier zeroDeposit() {
-        require((founderDepositAmount+applicantDepositAmount) == 0, "Deposit balance more than zero");
-        _;
-    }
-
-    modifier nonzeroDeposit() {
-        require((founderDepositAmount+applicantDepositAmount) > 0, "Deposit amount is zero");
-        _;
-    }
-
-    modifier depositLocker() {
-        _checkDepositLocker(msg.sender);
-        _;
-    }
-
-    modifier depositUnlocker() {
-        _checkDepositUnlocker(msg.sender);
-        _;
-    }
-
-    modifier noReentrant() {
-        require(!locked, "No re-entrancy");
-        locked = true;
-        _;
-        locked = false;
-    }
-
-    modifier zeroStore() {
-        require(address(store) == address(0), "Store is not zero");
-        _;
-    }
-
-/*
-    constructor(address _factory, address _founder) Ownable(_founder) {
+    function initialize(address _factory, address _founder, Parameters memory _paras) public initializer {
+        __Ownable_init(_factory);
         factory = _factory;
         founder = _founder;
         thisAccount = address(this);
-    }
-*/
-    function initialize(address _factory, address _founder) public initializer {
-        __Ownable_init(_founder);
-        factory = _factory;
-        founder = _founder;
-        thisAccount = address(this);
-    }
 
-    // 因为factory里面有调这个函数，所以在iBounty里声明了，但是这样就和OwnableUpgradeable多继承了，所以需要override一下
-    function transferOwnership(address newOwner) public override(OwnableUpgradeable, IBounty) {
-        // 这里可以编写你自己的转移所有权逻辑，也可以调用父合约的实现
-        super.transferOwnership(newOwner);
-    }
-
-    function incrementValue() public {
-        value++;
-    }
-
-    function init(Parameters memory _paras) public payable onlyOwner zeroStore {
         store = new BountyStore();
         vault = payable(address(store));
 
@@ -265,13 +74,14 @@ contract Bounty is IBounty, Initializable, OwnableUpgradeable {
             paras.depositTokenIsNative = false;
             depositToken = IERC20(paras.depositToken);
         }
+
         emit Created(owner(), factory, founder, paras);
     }
 
     function deposit(uint256 _amount) public payable onlyFounder inReadyToWork {
         require(_amount > 0, "Deposit amount is zero");
         _deposit(_amount);
-        founderDepositAmount = founderDepositAmount.add(_amount);
+        founderDepositAmount = founderDepositAmount + _amount;
         emit Deposit(msg.sender, _amount, founderDepositAmount);
     }
 
@@ -312,7 +122,7 @@ contract Bounty is IBounty, Initializable, OwnableUpgradeable {
         require(_amount >= paras.applicantDepositMinAmount, "Deposit amount less than limit");
         _deposit(_amount);
         _addApplicant(msg.sender, _amount, ApplicantStatus.Applied);
-        applicantDepositAmount = applicantDepositAmount.add(_amount);
+        applicantDepositAmount = applicantDepositAmount + _amount;
         (uint256 _depositAmount,) = store.getApplicant(msg.sender);
         emit Apply(msg.sender, _amount, _depositAmount, applicantDepositAmount);
     }
@@ -337,7 +147,7 @@ contract Bounty is IBounty, Initializable, OwnableUpgradeable {
         emit PostUpdate(msg.sender, timeLock);
     }
 
-    function vaultAccount() public view onlyOwner returns (address) {
+    function vaultAccount() public view returns (address) {
         return vault;
     }
 
@@ -361,19 +171,8 @@ contract Bounty is IBounty, Initializable, OwnableUpgradeable {
         return paras;
     }
 
-    function transferPrimary(address newBounty) external onlyOwner {
-        store.transferPrimary(newBounty);
-    }
-
-    function getStore() external onlyOwner view returns (address) {
+    function getStore() external view returns (address) {
         return address(store);
-    }
-
-    function transferStore(address payable newStore) external onlyOwner {
-        store = BountyStore(newStore);
-    }
-
-    function renounceOwnership() public override onlyOwner {
     }
 
     function _depositIsLocked() internal view returns (bool) {
@@ -436,7 +235,7 @@ contract Bounty is IBounty, Initializable, OwnableUpgradeable {
     function _refundApplicant(address _address) internal {
         (uint256 _amount,) = store.getApplicant(_address);
         require(_refundDepositToken(payable(_address), _amount), "Refund deposit to applicant failure");
-        applicantDepositAmount = applicantDepositAmount.sub(_amount);
+        applicantDepositAmount = applicantDepositAmount - _amount;
         store.putApplicantAmount(_address, 0);
         emit ReleaseApplicantDeposit(_address, _amount, 0, applicantDepositAmount);
     }
@@ -461,7 +260,7 @@ contract Bounty is IBounty, Initializable, OwnableUpgradeable {
             store.pushApplicant(_address);
         }
         (uint256 _mapAmount,) = store.getApplicant(_address);
-        store.putApplicant(_address, _mapAmount.add(_amount), uint8(_status));
+        store.putApplicant(_address, _mapAmount +_amount, uint8(_status));
     }
 
     function _getBalance(address _address) internal view returns (uint256) {
@@ -571,25 +370,93 @@ contract Bounty is IBounty, Initializable, OwnableUpgradeable {
         }
         return (_isApplicant, _amount, _status);
     }
-}
 
-contract BountyProxy is BeaconProxy {
-    constructor(address _beacon, bytes memory _data) BeaconProxy(_beacon, _data) {}
-}
-
-contract BountyBeacon is Initializable, OwnableUpgradeable, IBeacon {
-    address public implemAddr;
-
-    function initialize(address _implementation) public initializer {
-        __Ownable_init(msg.sender);
-        implemAddr = _implementation;
+    modifier onlyFounder() {
+        _checkFounder();
+        _;
     }
 
-    function implementation() external view override returns (address) {
-        return implemAddr;
+    modifier onlyOthers() {
+        _checkOthers();
+        _;
     }
 
-    function upgradeTo(address newImplementation) public onlyOwner {
-        implemAddr = newImplementation;
+    modifier onlyApplied() {
+        _checkAppliedApplicant();
+        _;
+    }
+
+    modifier inApplyTime() {
+        _checkInApplyTime();
+        _;
+    }
+
+    modifier inReadyToWork() {
+        _checkBountyStatus(BountyStatus.ReadyToWork, "Bounty status not in ready to work");
+        _;
+    }
+
+    modifier inWorkStarted() {
+        _checkBountyStatus(BountyStatus.WorkStarted, "Bounty status not in work started");
+        _;
+    }
+
+    modifier notCompleted() {
+        _checkNotBountyStatus(BountyStatus.Completed, "Bounty status is completed");
+        _;
+    }
+
+    modifier notExpired() {
+        _checkNotBountyStatus(BountyStatus.Expired, "Bounty status is expired");
+        _;
+    }
+
+    modifier depositLocked() {
+        require(depositLock, "Deposit is unlock");
+        _;
+    }
+
+    modifier depositUnlock() {
+        require(!depositLock, "Deposit is locked");
+        _;
+    }
+
+    modifier zeroDeposit() {
+        require((founderDepositAmount+applicantDepositAmount) == 0, "Deposit balance more than zero");
+        _;
+    }
+
+    modifier nonzeroDeposit() {
+        require((founderDepositAmount+applicantDepositAmount) > 0, "Deposit amount is zero");
+        _;
+    }
+
+    modifier depositLocker() {
+        _checkDepositLocker(msg.sender);
+        _;
+    }
+
+    modifier depositUnlocker() {
+        _checkDepositUnlocker(msg.sender);
+        _;
+    }
+
+    modifier noReentrant() {
+        require(!locked, "No re-entrancy");
+        locked = true;
+        _;
+        locked = false;
+    }
+}
+
+contract BountyBeacon is UpgradeableBeacon {
+    constructor(address _implementation) UpgradeableBeacon(_implementation, msg.sender) {}
+
+    function implementation() public view override returns (address) {
+        return super.implementation();
+    }
+
+    function upgradeTo(address newImplementation) public override onlyOwner {
+        super.upgradeTo(newImplementation);
     }
 }

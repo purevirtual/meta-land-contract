@@ -59,6 +59,6 @@ module.exports = {
     flat: true,     // 扁平化输出（不创建子目录）
   },
   etherscan: {
-    apiKey: ""
+    apiKey: process.env.ETHER_SCAN_API_KEY
   }
 };
