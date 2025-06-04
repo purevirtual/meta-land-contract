@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: SimPL-2.0
 pragma solidity >=0.8.x <0.9.0;
 
-import "@openzeppelin/contracts/proxy/beacon/IBeacon.sol";
 import "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -12,7 +11,7 @@ import "./interfaces/IBounty.sol";
 import "./BountyStore.sol";
 
 
-contract Bounty is IBounty, Initializable, OwnableUpgradeable {
+contract Bounty is IBounty, OwnableUpgradeable {
     enum BountyStatus {
         Pending, ReadyToWork, WorkStarted, Completed, Expired
     }
@@ -55,7 +54,7 @@ contract Bounty is IBounty, Initializable, OwnableUpgradeable {
     event PostUpdate(address caller, uint256 expiredTime);
 
     function initialize(address _factory, address _founder, Parameters memory _paras) public initializer {
-        __Ownable_init(_factory);
+        __Ownable_init(_founder);
         factory = _factory;
         founder = _founder;
         thisAccount = address(this);
@@ -78,24 +77,24 @@ contract Bounty is IBounty, Initializable, OwnableUpgradeable {
         emit Created(owner(), factory, founder, paras);
     }
 
-    function deposit(uint256 _amount) public payable onlyFounder inReadyToWork {
+    function deposit(uint256 _amount) public payable onlyOwner inReadyToWork {
         require(_amount > 0, "Deposit amount is zero");
         _deposit(_amount);
         founderDepositAmount = founderDepositAmount + _amount;
         emit Deposit(msg.sender, _amount, founderDepositAmount);
     }
 
-    function release() public payable onlyFounder depositUnlock nonzeroDeposit {
+    function release() public payable onlyOwner depositUnlock nonzeroDeposit {
         _releaseAllDeposit();
     }
 
-    function close() public payable onlyFounder zeroDeposit notCompleted notExpired {
+    function close() public payable onlyOwner zeroDeposit notCompleted notExpired {
         require(_refundDepositToken(payable(founder), _getBalance(vault)), "Transfer balance to the founder failure");
         bountyStatus = BountyStatus.Completed;
         emit Close(msg.sender, bountyStatus);
     }
 
-    function approveApplicant(address _address) public onlyFounder inReadyToWork {
+    function approveApplicant(address _address) public onlyOwner inReadyToWork {
         (,,bool _isAppliedApplicant,) = _applicantState(_address);
         require(_isAppliedApplicant || (!_isAppliedApplicant && paras.applicantDepositMinAmount == 0),
             "To be approved must a applicant");
@@ -110,7 +109,7 @@ contract Bounty is IBounty, Initializable, OwnableUpgradeable {
         emit Approve(msg.sender, _address);
     }
 
-    function unapproveApplicant(address _address) public onlyFounder inWorkStarted {
+    function unapproveApplicant(address _address) public onlyOwner inWorkStarted {
         (,bool _isApprovedApplicant,,) = _applicantState(_address);
         require(_isApprovedApplicant, "Applicant status is not approved");
         store.putApplicantStatus(_address, uint8(ApplicantStatus.Unapproved));
@@ -305,10 +304,6 @@ contract Bounty is IBounty, Initializable, OwnableUpgradeable {
         require(_isUnlocker, "Caller is not allowed to unlock");
     }
 
-    function _checkFounder() internal view virtual {
-        require(msg.sender == founder, "Caller is not the founder");
-    }
-
     function _checkOthers() internal view virtual {
         require(msg.sender != factory, "Must not be factory");
         require(msg.sender != founder, "Must not be founder");
@@ -369,11 +364,6 @@ contract Bounty is IBounty, Initializable, OwnableUpgradeable {
             _isApplicant = false;
         }
         return (_isApplicant, _amount, _status);
-    }
-
-    modifier onlyFounder() {
-        _checkFounder();
-        _;
     }
 
     modifier onlyOthers() {
