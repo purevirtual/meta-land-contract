@@ -31,7 +31,8 @@
     "@nomicfoundation/hardhat-toolbox": "^2.0.2",
     "@openzeppelin/hardhat-upgrades": "^1.2.1",
     "@openzeppelin/upgrades-core": "1.44.1",
-    "hardhat": "^2.19.0"
+    "hardhat": "^2.19.0",
+    "hardhat-contract-sizer": "^2.10.0"
   },
   "packageManager": "pnpm@8.15.4"
 }

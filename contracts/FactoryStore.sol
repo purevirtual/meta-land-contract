@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: SimPL-2.0
 pragma solidity >=0.8.x <0.9.0;
 
-import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-
 contract FactoryStore {
     address[] private arrChildren;
     mapping(address => bool) private mapChildren;

@@ -7,7 +7,7 @@ import "../Bounty.sol";
 contract BountyV2 is Bounty {
     uint256 public isUpgraded;
 
-    function setUpgrade(uint256 _u) public onlyFounder {
+    function setUpgrade(uint256 _u) public onlyOwner {
         isUpgraded = _u;
     }
 }

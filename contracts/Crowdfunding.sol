@@ -1,150 +1,22 @@
 // SPDX-License-Identifier: SimPL-2.0
 pragma solidity ^0.8.0;
 
-import { IERC20, IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import {IERC20, IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
+import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
-import "../utils/SafeMath.sol";
-import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 import "./interfaces/ICrowdfundingFactory.sol";
 import "./FactoryStore.sol";
 import "./CrowdfundingStore.sol";
 import "./Error.sol";
 import "./Whitelist.sol";
 
-contract CrowdfundingFactory is Ownable {
-    event Created(address founder, address crowdfunding, Parameters paras);
-    FactoryStore store;
-    Whitelist dexRouters;
-    uint24 public fee;
-    address public feeTo;
-    address public feeToSetter;
-    address public transferSigner;
-
-    constructor(address _feeToSetter, address _feeTo, address _transferSigner) Ownable(msg.sender) {
-        store = new FactoryStore();
-        dexRouters = new Whitelist();
-        feeToSetter = _feeToSetter;
-        transferSigner = _transferSigner;
-        feeTo = _feeTo;
-        fee = 500;
-    }
-
-    function createCrowdfundingContract(Parameters calldata paras) public {
-        if (
-            paras.sellTokenAddress == address(0) &&
-            paras.buyTokenAddress == address(0)
-        ) {
-            revert TokenAddress();
-        }
-        require(paras.buyPrice > 0, "ERR: BUY PRICE");
-        if (paras.router != address(0)) {
-            require(paras.dexInitPrice > 0, "ERR: INIT PRICE OF DEX");
-        }
-        require(
-            isDexRouters(paras.router) || paras.router == address(0),
-            "ERR:NOT SUPPORT DEX"
-        );
-        IERC20 sellToken = IERC20(paras.sellTokenAddress);
-        Crowdfunding newCrowdfunding = new Crowdfunding(
-            address(this),
-            msg.sender,
-            "Crowdfunding",
-            "1.0"
-        );
-        newCrowdfunding.init(paras);
-        uint256 _deposit = newCrowdfunding.deposit();
-        require(_deposit > 0, "Sell token deposit is zero");
-        // require(sellToken.balanceOf(msg.sender) >= _deposit, "Sell token balance is insufficient");
-        // require(sellToken.allowance(msg.sender, address(this)) >= _deposit, "Sell token allowance is insufficient");
-        if (sellToken.balanceOf(msg.sender) < _deposit) {
-            revert TokenBalanceInsufficient("Sell");
-        }
-        if (sellToken.allowance(msg.sender, address(this)) < _deposit) {
-            revert TokenAllowanceInsufficient("Sell");
-        }
-        require(
-            sellToken.transferFrom(
-                msg.sender,
-                newCrowdfunding.vaultAccount(),
-                _deposit
-            ),
-            "Sell token transferFrom failure"
-        );
-        newCrowdfunding.transferOwnership(msg.sender);
-        address _address = address(newCrowdfunding);
-        store.push(_address);
-        emit Created(msg.sender, _address, paras);
-    }
-
-    function children() external view returns (address[] memory) {
-        return store.children();
-    }
-
-    function isChild(address _address) external view returns (bool) {
-        return store.isChild(_address);
-    }
-
-    function renounceOwnership() public override onlyOwner {}
-
-    function getStore() external view onlyOwner returns (address) {
-        return address(store);
-    }
-
-    function addToDexRouters(address _router) public onlyOwner {
-        dexRouters.addToWhitelist(_router);
-    }
-
-    function isDexRouters(address _router) public view returns (bool) {
-        return dexRouters.isWhitelisted(_router);
-    }
-
-    function removeFromDexRouters(address _router) public onlyOwner {
-        dexRouters.removeFromWhitelist(_router);
-    }
-
-    function setFeeTo(address _feeTo) external {
-        if (msg.sender != feeToSetter) {
-            revert Unauthorized(msg.sender);
-        }
-        feeTo = _feeTo;
-    }
-
-    function setFeeToSetter(address _feeToSetter) external {
-        if (msg.sender != feeToSetter || msg.sender != owner()) {
-            revert Unauthorized(msg.sender);
-        }
-        feeToSetter = _feeToSetter;
-    }
-
-    function setTransferSigner(address _transferSigner) external onlyOwner {
-        transferSigner = _transferSigner;
-    }
-}
-
-struct Parameters {
-    address sellTokenAddress;
-    address buyTokenAddress;
-    uint8 sellTokenDecimals;
-    uint8 buyTokenDecimals;
-    bool buyTokenIsNative;
-    uint256 raiseTotal;
-    uint256 buyPrice;
-    uint16 swapPercent;
-    uint16 sellTax;
-    uint256 maxBuyAmount;
-    uint256 minBuyAmount;
-    uint16 maxSellPercent;
-    address teamWallet;
-    uint256 startTime;
-    uint256 endTime;
-    address router;
-    uint256 dexInitPrice;
-}
-
-contract Crowdfunding is Ownable, EIP712 {
-    using SafeMath for uint;
+contract Crowdfunding is OwnableUpgradeable, EIP712Upgradeable {
     enum Status {
         Pending,
         Upcoming,
@@ -157,7 +29,7 @@ contract Crowdfunding is Ownable, EIP712 {
         address factory,
         address founder,
         uint256 deposit,
-        Parameters paras
+        ICrowdfundingFactory.Parameters paras
     );
     event Buy(
         address caller,
@@ -189,6 +61,7 @@ contract Crowdfunding is Ownable, EIP712 {
         // uint16 maxSellPercent,
         uint256 endTime
     );
+
     CrowdfundingStore store;
     IERC20Metadata private sellToken;
     IERC20Metadata private buyToken;
@@ -200,70 +73,35 @@ contract Crowdfunding is Ownable, EIP712 {
     uint256 private buyTokenAmount;
     uint256 private swapPoolAmount;
     uint256 private sellTokenAmount;
-    Parameters private paras;
+    ICrowdfundingFactory.Parameters private paras;
     address private thisAccount;
     address payable private vault;
     Status private status;
     bool internal locked;
 
-    modifier isActive() {
-        _checkActive();
-        _;
-    }
+    function initialize(
+        address _factory, 
+        address _founder, 
+        string memory _name, 
+        string memory _version, 
+        ICrowdfundingFactory.Parameters memory _parameters
+    ) public initializer {
+        __Ownable_init(_founder);
+        __EIP712_init(_name, _version);
 
-    modifier inTime() {
-        _checkInTime();
-        _;
-    }
-
-    modifier beforeStart() {
-        _checkBeforeStart();
-        _;
-    }
-
-    modifier beforeEnd() {
-        _checkBeforeEnd();
-        _;
-    }
-
-    modifier canOver() {
-        _checkCanOver();
-        _;
-    }
-
-    modifier noReentrant() {
-        require(!locked, "No re-entrancy");
-        locked = true;
-        _;
-        locked = false;
-    }
-
-    modifier zeroStore() {
-        require(address(store) == address(0), "Store is not zero");
-        _;
-    }
-
-    constructor(
-        address _factory,
-        address _founder,
-        string memory _name,
-        string memory _version
-    ) Ownable(_founder) EIP712(_name, _version) {
         factory = _factory;
         founder = _founder;
         thisAccount = address(this);
         ifactory = ICrowdfundingFactory(factory);
-    }
 
-    function init(
-        Parameters memory _parameters
-    ) public payable onlyOwner zeroStore {
         store = new CrowdfundingStore();
         vault = payable(address(store));
+        
         paras = _parameters;
         status = _statusFromTime();
         sellToken = IERC20Metadata(paras.sellTokenAddress);
         paras.sellTokenDecimals = sellToken.decimals();
+        
         if (paras.sellTokenAddress == paras.buyTokenAddress) {
             paras.buyTokenIsNative = true;
             paras.buyTokenDecimals = 18;
@@ -272,16 +110,12 @@ contract Crowdfunding is Ownable, EIP712 {
             buyToken = IERC20Metadata(paras.buyTokenAddress);
             paras.buyTokenDecimals = buyToken.decimals();
         }
+
         // depositSellAmount = _calculateDeposit();
         (, depositSellAmount) = _swapAmount(paras.raiseTotal, 0);
         sellTokenAmount = depositSellAmount;
-        depositAmount = paras
-            .raiseTotal
-            .mul(paras.swapPercent)
-            .mul(paras.dexInitPrice)
-            .div(10000)
-            .div(10 ** paras.buyTokenDecimals)
-            .add(depositSellAmount);
+        depositAmount = paras.raiseTotal * paras.swapPercent * paras.dexInitPrice / 10000 / (10 ** paras.buyTokenDecimals) + depositSellAmount;
+
         emit Created(owner(), factory, founder, depositSellAmount, paras);
     }
 
@@ -302,25 +136,29 @@ contract Crowdfunding is Ownable, EIP712 {
         if (_buyAmount < paras.minBuyAmount) {
             revert AmountLTMinimum();
         }
+
         // require(_checkMaxBuyAmount(msg.sender, _buyAmount), "Amount exceeds maximum");
         if (!_checkMaxBuyAmount(msg.sender, _buyAmount)) {
             revert AmountExceedsMaximum();
         }
+
         // require(sellToken.balanceOf(vault) >= _sellAmount, "Sell token balance is insufficient");
         if (sellToken.balanceOf(vault) < _sellAmount) {
             revert TokenBalanceInsufficient("Sell");
         }
+
         uint256 _toPoolAmount = _toSwapPoolAmount(_buyAmount);
         if (paras.buyTokenIsNative) {
             require(msg.value == _buyAmount, "msg.value is not valid");
             (bool isSend, ) = vault.call{value: _toPoolAmount}("");
+            
             // require(isSend, "Transfer failure");
             if (!isSend) {
                 revert Transfer("Buy");
             }
-            (isSend, ) = paras.teamWallet.call{
-                value: msg.value.sub(_toPoolAmount)
-            }("");
+
+            (isSend, ) = paras.teamWallet.call{value: msg.value - _toPoolAmount}("");
+
             // require(isSend, "Transfer team failure");
             if (!isSend) {
                 revert Transfer("Buy");
@@ -330,22 +168,19 @@ contract Crowdfunding is Ownable, EIP712 {
             if (buyToken.allowance(msg.sender, thisAccount) < _buyAmount) {
                 revert TokenAllowanceInsufficient("Buy");
             }
+
             // require(buyToken.balanceOf(msg.sender) >= _buyAmount, "Your buy token balance is insufficient");
             if (buyToken.balanceOf(msg.sender) < _buyAmount) {
                 revert TokenBalanceInsufficient("Buy");
             }
+
             // require(buyToken.transferFrom(msg.sender, paras.teamWallet, _buyAmount.sub(_toPoolAmount)), "Buy token transfer team failure");
             if (!buyToken.transferFrom(msg.sender, vault, _toPoolAmount)) {
                 revert Transfer("Buy");
             }
+
             // require(buyToken.transferFrom(msg.sender, vault, _toPoolAmount), "Buy token transferFrom failure");
-            if (
-                !buyToken.transferFrom(
-                    msg.sender,
-                    paras.teamWallet,
-                    _buyAmount.sub(_toPoolAmount)
-                )
-            ) {
+            if (!buyToken.transferFrom(msg.sender, paras.teamWallet, _buyAmount - _toPoolAmount)) {
                 revert Transfer("Buy");
             }
         }
@@ -353,11 +188,13 @@ contract Crowdfunding is Ownable, EIP712 {
         if (!store.transferToken(sellToken, msg.sender, _sellAmount)) {
             revert Transfer("Sell");
         }
-        buyTokenAmount = buyTokenAmount.add(_buyAmount);
-        sellTokenAmount = sellTokenAmount.sub(_sellAmount);
-        swapPoolAmount = swapPoolAmount.add(_toPoolAmount);
+
+        buyTokenAmount = buyTokenAmount + _buyAmount;
+        sellTokenAmount = sellTokenAmount - _sellAmount;
+        swapPoolAmount = swapPoolAmount + _toPoolAmount;
         store.addTotal(msg.sender, _buyAmount, _sellAmount);
         store.addAmount(msg.sender, _buyAmount, _sellAmount);
+        
         emit Buy(
             msg.sender,
             _buyAmount,
@@ -367,6 +204,7 @@ contract Crowdfunding is Ownable, EIP712 {
             swapPoolAmount,
             block.timestamp
         );
+
         return true;
     }
 
@@ -377,6 +215,7 @@ contract Crowdfunding is Ownable, EIP712 {
         if (_buyAmount == 0 || _sellAmount == 0) {
             revert ZeroAmount();
         }
+
         // require(_checkPrice(_buyAmount, _sellAmount), "Price is mismatch");
         if (!_checkPrice(_buyAmount, _sellAmount)) {
             revert PriceIsMismatch();
@@ -395,34 +234,41 @@ contract Crowdfunding is Ownable, EIP712 {
         // if (!_checkPrice(_buyAmount, _sellAmount)) {
         //     revert PriceIsMismatch();
         // }
+
         _checkAmount(_buyAmount, _sellAmount);
         // require(_checkMaxSellAmount(msg.sender, _sellAmount), "Amount exceeds maximum");
         if (!_checkMaxSellAmount(msg.sender, _sellAmount)) {
             revert AmountExceedsMaximum();
         }
+
         uint256 _buyAmountAfterTax = _amountAfterTax(_buyAmount);
         // require(_buyBalance() >= _buyAmountAfterTax, "Balance is insufficient");
         if (_buyBalance() < _buyAmountAfterTax) {
             revert TokenBalanceInsufficient("Buy");
         }
+
         // require(sellToken.allowance(msg.sender, thisAccount) >= _sellAmount, "Your sell token allowance is insufficient");
         if (sellToken.allowance(msg.sender, thisAccount) < _sellAmount) {
             revert TokenAllowanceInsufficient("Sell token");
         }
+
         // require(sellToken.balanceOf(msg.sender) >= _sellAmount, "Your sell token balance is insufficient");
         if (sellToken.balanceOf(msg.sender) < _sellAmount) {
             revert TokenBalanceInsufficient("Sell token");
         }
+
         // require(sellToken.transferFrom(msg.sender, vault, _sellAmount), "Sell token transferFrom failure");
         if (!sellToken.transferFrom(msg.sender, vault, _sellAmount)) {
             revert Transfer("Sell");
         }
+
         if (paras.buyTokenIsNative) {
             // require(vault.balance >= _buyAmountAfterTax, "Balance is insufficient");
             // require(store.transfer(msg.sender, _buyAmountAfterTax), "Transfer buyer failure");
             if (vault.balance < _buyAmountAfterTax) {
                 revert TokenAllowanceInsufficient("Buy token");
             }
+
             if (!store.transfer(msg.sender, _buyAmountAfterTax)) {
                 revert Transfer("Buy token");
             }
@@ -432,16 +278,17 @@ contract Crowdfunding is Ownable, EIP712 {
             if (buyToken.balanceOf(vault) < _buyAmountAfterTax) {
                 revert TokenAllowanceInsufficient("Buy token");
             }
-            if (
-                !store.transferToken(buyToken, msg.sender, _buyAmountAfterTax)
-            ) {
+
+            if (!store.transferToken(buyToken, msg.sender, _buyAmountAfterTax)) {
                 revert Transfer("Buy token");
             }
         }
-        buyTokenAmount = buyTokenAmount.sub(_buyAmount);
-        sellTokenAmount = sellTokenAmount.add(_sellAmount);
-        swapPoolAmount = swapPoolAmount.sub(_buyAmountAfterTax);
+
+        buyTokenAmount = buyTokenAmount - _buyAmount;
+        sellTokenAmount = sellTokenAmount + _sellAmount;
+        swapPoolAmount = swapPoolAmount - _buyAmountAfterTax;
         store.subAmount(msg.sender, _buyAmount, _sellAmount);
+
         emit Sell(
             msg.sender,
             _buyAmount,
@@ -451,11 +298,8 @@ contract Crowdfunding is Ownable, EIP712 {
             swapPoolAmount,
             block.timestamp
         );
-        return true;
-    }
 
-    receive() external payable {
-        emit Receive(msg.sender, "receive");
+        return true;
     }
 
     function cancel() public onlyOwner isActive beforeStart {
@@ -467,6 +311,7 @@ contract Crowdfunding is Ownable, EIP712 {
         if (!_refundSellToken(payable(paras.teamWallet))) {
             revert RefundSellTokenFailed();
         }
+
         status = Status.Cancel;
         emit Cancel(msg.sender, status);
     }
@@ -476,6 +321,7 @@ contract Crowdfunding is Ownable, EIP712 {
             if (paras.router != address(0)) {
                 revert TransferLiquidity("only auto listing");
             }
+
             // require(paras.router==address(0), "Can only be closed by transferring liquidity");
             bool ok = _takeFee();
             if (!ok) {
@@ -499,6 +345,7 @@ contract Crowdfunding is Ownable, EIP712 {
         if (!_refundSellToken(payable(paras.teamWallet))) {
             revert RefundSellTokenFailed();
         }
+
         status = Status.Ended;
         emit Remove(msg.sender, status);
     }
@@ -527,7 +374,7 @@ contract Crowdfunding is Ownable, EIP712 {
         );
     }
 
-    function vaultAccount() public view onlyOwner returns (address) {
+    function vaultAccount() public view returns (address) {
         return vault;
     }
 
@@ -595,7 +442,7 @@ contract Crowdfunding is Ownable, EIP712 {
     // }
 
     function deposit() public view returns (uint256 _depositAmount) {
-        return (depositAmount);
+        return depositAmount;
     }
 
     function maxBuyAmount()
@@ -618,19 +465,9 @@ contract Crowdfunding is Ownable, EIP712 {
     //     return paras.buyTokenIsNative;
     // }
 
-    function getStore() external view onlyOwner returns (address) {
+    function getStore() external view returns (address) {
         return address(store);
     }
-
-    function transferPrimary(address newCrowdfunding) external onlyOwner {
-        store.transferPrimary(newCrowdfunding);
-    }
-
-    function transferStore(address payable newStore) external onlyOwner {
-        store = CrowdfundingStore(newStore);
-    }
-
-    function renounceOwnership() public override onlyOwner {}
 
     function transferToLiquidity(
         address _router,
@@ -650,9 +487,11 @@ contract Crowdfunding is Ownable, EIP712 {
         if (paras.router == address(0)) {
             revert TransferLiquidity("not allow auto listing");
         }
+
         if (_router != paras.router) {
             revert TransferLiquidity("Inconsistent router");
         }
+
         ICrowdfundingFactory _factory = ICrowdfundingFactory(factory);
         if (
             _verify(
@@ -670,14 +509,15 @@ contract Crowdfunding is Ownable, EIP712 {
         if (!ok) {
             revert HandleFeeError();
         }
+
         uint256 amountB = _buyBalance();
-        uint256 amountA = amountB.mul(paras.dexInitPrice).div(
-            10 ** paras.buyTokenDecimals
-        );
+        uint256 amountA = amountB * paras.dexInitPrice / 10 ** paras.buyTokenDecimals;
+
         // require(, "The balance of the token sold is insufficient to complete the automatic transfer of liquidity");
         if (amountA > sellToken.balanceOf(vault)) {
             revert TokenBalanceInsufficient("sell token");
         }
+
         bytes calldata data = _data;
         (success, result) = store.transferToLiquidity(
             _router,
@@ -692,6 +532,7 @@ contract Crowdfunding is Ownable, EIP712 {
         if (!success) {
             revert AddLiquidityFailed();
         }
+
         // require(
         //     _refundSellToken(payable(paras.teamWallet)),
         //     "Refund sell token failure"
@@ -699,6 +540,7 @@ contract Crowdfunding is Ownable, EIP712 {
         if (!_refundSellToken(payable(paras.teamWallet))) {
             revert RefundSellTokenFailed();
         }
+
         status = Status.Ended;
         emit TransferToLiquidity(msg.sender, status, result);
         return (success, result);
@@ -733,7 +575,7 @@ contract Crowdfunding is Ownable, EIP712 {
     }
 
     function _takeFee() internal returns (bool) {
-        uint256 fee = _buyBalance().mul(ifactory.fee()).div(10000);
+        uint256 fee = _buyBalance() * ifactory.fee() /10000;
         bool ok;
         if (paras.buyTokenIsNative) {
             (ok) = store.transfer(ifactory.feeTo(), fee);
@@ -782,7 +624,7 @@ contract Crowdfunding is Ownable, EIP712 {
     }
 
     function _amountAfterTax(uint256 _amount) internal view returns (uint256) {
-        return _amount.sub((_amount * paras.sellTax) / 10000);
+        return _amount - (_amount * paras.sellTax) / 10000;
     }
 
     function _toSwapPoolAmount(
@@ -822,8 +664,8 @@ contract Crowdfunding is Ownable, EIP712 {
     ) internal view returns (uint256, uint256) {
         (uint256 _buyAmount, ) = store.getAmount(buyer);
         uint256 _buyMaxAmount = Math.min(
-            paras.maxBuyAmount.sub(_buyAmount),
-            paras.raiseTotal.sub(buyTokenAmount)
+            paras.maxBuyAmount - _buyAmount,
+            paras.raiseTotal - buyTokenAmount
         );
         (uint256 _remainBuyAmount, ) = _swapAmount(0, sellTokenAmount);
         return _swapAmount(Math.min(_buyMaxAmount, _remainBuyAmount), 0);
@@ -835,9 +677,7 @@ contract Crowdfunding is Ownable, EIP712 {
         (, uint256 _tSellAmount) = store.getTotal(seller);
         (, uint256 _aSellAmount) = store.getAmount(seller);
         uint256 _sellMaxAmount = Math.min(
-            _aSellAmount.add((_tSellAmount * paras.maxSellPercent) / 10000).sub(
-                _tSellAmount
-            ),
+            _aSellAmount + (_tSellAmount * paras.maxSellPercent) / 10000 - _tSellAmount,
             _aSellAmount
         );
         (, uint256 _remainSellAmount) = _swapAmount(swapPoolAmount, 0);
@@ -876,14 +716,11 @@ contract Crowdfunding is Ownable, EIP712 {
         //     return (0, 0);
         // }
         if (_buyAmount > 0) {
-            _sellAmount = _buyAmount.mul(_swapPrice()).div(
-                10 ** paras.buyTokenDecimals
-            );
+            _sellAmount = _buyAmount * _swapPrice() / 10 ** paras.buyTokenDecimals;
         } else if (_sellAmount > 0) {
-            _buyAmount = _sellAmount.mul(10 ** paras.buyTokenDecimals).div(
-                _swapPrice()
-            );
+            _buyAmount = _sellAmount * 10 ** paras.buyTokenDecimals / _swapPrice();
         }
+        
         return (_buyAmount, _sellAmount);
     }
 
@@ -943,5 +780,53 @@ contract Crowdfunding is Ownable, EIP712 {
         } else {
             return Status.Ended;
         }
+    }
+
+    receive() external payable {
+        emit Receive(msg.sender, "receive");
+    }
+
+    modifier isActive() {
+        _checkActive();
+        _;
+    }
+
+    modifier inTime() {
+        _checkInTime();
+        _;
+    }
+
+    modifier beforeStart() {
+        _checkBeforeStart();
+        _;
+    }
+
+    modifier beforeEnd() {
+        _checkBeforeEnd();
+        _;
+    }
+
+    modifier canOver() {
+        _checkCanOver();
+        _;
+    }
+
+    modifier noReentrant() {
+        require(!locked, "No re-entrancy");
+        locked = true;
+        _;
+        locked = false;
+    }
+}
+
+contract CrowdfundingBeacon is UpgradeableBeacon {
+    constructor(address _implementation) UpgradeableBeacon(_implementation, msg.sender) {}
+
+    function implementation() public view override returns (address) {
+        return super.implementation();
+    }
+
+    function upgradeTo(address newImplementation) public override onlyOwner {
+        super.upgradeTo(newImplementation);
     }
 }

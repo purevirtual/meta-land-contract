@@ -1,6 +1,7 @@
 require('@openzeppelin/hardhat-upgrades');
 require("@nomicfoundation/hardhat-toolbox");
 require('hardhat-abi-exporter');
+require("hardhat-contract-sizer");
 
 // 配置参考 .env.example里的，换成自己真实的，放到.env里就可以了
 // config
@@ -60,5 +61,10 @@ module.exports = {
   },
   etherscan: {
     apiKey: process.env.ETHER_SCAN_API_KEY
-  }
+  },
+  contractSizer: {
+    alphaSort: true,
+    runOnCompile: false, // 编译时自动显示大小
+    disambiguatePaths: false,
+  },
 };
